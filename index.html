@@ -1,0 +1,133 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <title>ESP32 GPS Tracker - Firebase + OpenStreetMap</title>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+  <style>
+    #map { height: 90vh; width: 100vw; }
+    .button-container {
+      position: absolute;
+      top: 10px;
+      left: 10px;
+      z-index: 1000;
+    }
+    button {
+      padding: 10px 20px;
+      margin: 5px;
+      font-size: 16px;
+      cursor: pointer;
+      background-color: #007bff;
+      color: white;
+      border: none;
+      border-radius: 5px;
+    }
+    button:hover {
+      background-color: #0056b3;
+    }
+  </style>
+</head>
+<body>
+  <div class="button-container">
+    <button onclick="startPolyline()">Start Tracking</button>
+    <button onclick="resetMap()">Reset Map</button>
+  </div>
+  <div id="map"></div>
+
+  <!-- Leaflet -->
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+
+  <script>
+    const FIREBASE_URL = "https://gpstracker-575ea-default-rtdb.asia-southeast1.firebasedatabase.app/logs.json?orderBy=\"$key\"&limitToLast=1";
+
+    let map, polyline, isTracking = false;
+
+    function initializeMap(lat, lng) {
+      map = L.map('map').setView([lat, lng], 16);
+      L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+        attribution: '&copy; OpenStreetMap contributors'
+      }).addTo(map);
+
+      polyline = L.polyline([], { color: 'blue' }).addTo(map);
+    }
+
+    function addDataMarker(lat, lng, suhu, hum, accX, accY, accZ) {
+      const popupContent = `
+        <b>📍 Data Lokasi</b><br>
+        Latitude: ${lat}<br>
+        Longitude: ${lng}<br><br>
+        <b>🌡️ Suhu:</b> ${suhu} °C<br>
+        <b>💧 Kelembapan:</b> ${hum} %<br>
+        <b>🧭 Akselerasi:</b><br>
+        accX: ${accX}<br>
+        accY: ${accY}<br>
+        accZ: ${accZ}
+      `;
+      const pointMarker = L.circleMarker([lat, lng], {
+        radius: 6,
+        color: "#ff0000",
+        fillColor: "#f03",
+        fillOpacity: 0.7
+      }).addTo(map).bindPopup(popupContent);
+    }
+
+    function updatePolyline(lat, lng) {
+      if (isTracking && polyline) {
+        polyline.addLatLng([lat, lng]);
+      }
+    }
+
+    function startPolyline() {
+      isTracking = !isTracking;
+      const btn = document.querySelector("button");
+      btn.innerText = isTracking ? "Stop Tracking" : "Start Tracking";
+    }
+
+    function resetMap() {
+      if (polyline) {
+        polyline.remove();
+        polyline = L.polyline([], { color: 'blue' }).addTo(map);
+      }
+
+      // Hapus semua marker dari map
+      map.eachLayer(layer => {
+        if (layer instanceof L.CircleMarker) {
+          map.removeLayer(layer);
+        }
+      });
+    }
+
+    function fetchDataFromFirebase() {
+      fetch(FIREBASE_URL)
+        .then(res => res.json())
+        .then(data => {
+          const entry = Object.values(data)[0];
+          const lat = entry.lokasi.latitude;
+          const lng = entry.lokasi.longitude;
+          const suhu = entry.sensor.suhu;
+          const hum = entry.sensor.kelembapan;
+          const accX = entry.sensor.accX;
+          const accY = entry.sensor.accY;
+          const accZ = entry.sensor.accZ;
+
+          if (!map) {
+            initializeMap(lat, lng);
+          }
+
+          // Tambah marker untuk data baru
+          addDataMarker(lat, lng, suhu, hum, accX, accY, accZ);
+
+          // Tambah ke polyline jika tracking aktif
+          updatePolyline(lat, lng);
+        })
+        .catch(err => {
+          console.error("Gagal mengambil data dari Firebase:", err);
+        });
+    }
+
+    // Fetch data secara berkala
+    setInterval(fetchDataFromFirebase, 5000);
+  </script>
+</body>
+</html>
